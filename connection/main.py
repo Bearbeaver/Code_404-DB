@@ -5,7 +5,7 @@ from mysql.connector import Error
 # ---- your student number (the connection details come from it) ----
 STUDENT_NUMBER = "" #enter your student number
 
-# Port = "2" + last four digits of the student number (4428909 -> 28909)
+# Port = "2" + last four digits of the student number 
 PORT = int("2" + STUDENT_NUMBER[-4:])
 
 
