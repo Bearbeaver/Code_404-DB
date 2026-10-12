@@ -1,295 +1,361 @@
-import mysql.connector
-from mysql.connector import Error
+-- =====================================================
+-- University Accommodation Management System (MySQL)
+-- File name : university_accommodation.sql
+-- =====================================================
 
-# ---- your student number (the connection details come from it) ----
-STUDENT_NUMBER = "4428909"
+DROP DATABASE IF EXISTS university_accommodation;
+CREATE DATABASE university_accommodation;
+USE university_accommodation;
 
-# Port = "2" + last four digits of the student number (4428909 -> 28909)
-PORT = int("2" + STUDENT_NUMBER[-4:])
+-- ---------------------- TABLES -----------------------
 
+CREATE TABLE student (
+    StudentID   INT PRIMARY KEY AUTO_INCREMENT,
+    FirstName   VARCHAR(50) NOT NULL,
+    LastName    VARCHAR(50) NOT NULL,
+    Email       VARCHAR(100) NOT NULL UNIQUE,
+    Phone       VARCHAR(20),
+    Programme   VARCHAR(100),
+    YearOfStudy INT
+);
 
-DB_CONFIG = {
-    "host": "172.21.12.21",
-    "port": PORT,
-    "user": STUDENT_NUMBER,
-    "password": "!St" + STUDENT_NUMBER,
-    "database": "university_accommodation",
-    "ssl_disabled": False,          # the server requires SSL
-    "ssl_verify_cert": False,       # self-signed certificate, so do not verify
-    "ssl_verify_identity": False,
-    "connection_timeout": 10,
-}
+CREATE TABLE residence (
+    ResidenceID   INT PRIMARY KEY AUTO_INCREMENT,
+    ResidenceName VARCHAR(100) NOT NULL,
+    Location      VARCHAR(100),
+    GenderPolicy  VARCHAR(20),
+    TotalCapacity INT
+);
 
+CREATE TABLE room (
+    RoomID      INT PRIMARY KEY AUTO_INCREMENT,
+    ResidenceID INT NOT NULL,
+    RoomNumber  VARCHAR(10) NOT NULL,
+    RoomType    VARCHAR(20),
+    Capacity    INT NOT NULL,
+    Status      VARCHAR(20) DEFAULT 'Available',
+    FOREIGN KEY (ResidenceID) REFERENCES residence(ResidenceID)
+);
 
-def connect():
-    """Create and return a database connection."""
-    return mysql.connector.connect(**DB_CONFIG)
+CREATE TABLE academic_period (
+    PeriodID     INT PRIMARY KEY AUTO_INCREMENT,
+    AcademicYear INT NOT NULL,
+    Semester     INT NOT NULL,
+    StartDate    DATE,
+    EndDate      DATE
+);
 
+CREATE TABLE application (
+    ApplicationID   INT PRIMARY KEY AUTO_INCREMENT,
+    StudentID       INT NOT NULL,
+    PeriodID        INT NOT NULL,
+    ApplicationDate DATE,
+    Status          VARCHAR(20) DEFAULT 'Pending',
+    FOREIGN KEY (StudentID) REFERENCES student(StudentID),
+    FOREIGN KEY (PeriodID)  REFERENCES academic_period(PeriodID)
+);
 
-def run_query(conn, sql, params=None):
-    """Run a SELECT query and print the results as a table."""
-    cursor = conn.cursor()
-    cursor.execute(sql, params)
-    rows = cursor.fetchall()
-    headers = [col[0] for col in cursor.description]
-    cursor.close()
+-- ALLOCATION is the bridge table between STUDENT and ROOM (many-to-many)
+CREATE TABLE allocation (
+    AllocationID  INT PRIMARY KEY AUTO_INCREMENT,
+    StudentID     INT NOT NULL,
+    RoomID        INT NOT NULL,
+    ApplicationID INT NOT NULL UNIQUE,
+    StartDate     DATE,
+    EndDate       DATE,
+    Status        VARCHAR(20) DEFAULT 'Active',
+    FOREIGN KEY (StudentID)     REFERENCES student(StudentID),
+    FOREIGN KEY (RoomID)        REFERENCES room(RoomID),
+    FOREIGN KEY (ApplicationID) REFERENCES application(ApplicationID)
+);
 
-    if not rows:
-        print("No results found.")
-        return
+CREATE TABLE payment (
+    PaymentID     INT PRIMARY KEY AUTO_INCREMENT,
+    StudentID     INT NOT NULL,
+    PaymentDate   DATE,
+    Amount        DECIMAL(10,2) NOT NULL,
+    PaymentMethod VARCHAR(20),
+    Status        VARCHAR(20) DEFAULT 'Pending',
+    FOREIGN KEY (StudentID) REFERENCES student(StudentID)
+);
 
-    # work out column widths so the output lines up
-    widths = [len(h) for h in headers]
-    for row in rows:
-        for i, value in enumerate(row):
-            widths[i] = max(widths[i], len(str(value)))
+CREATE TABLE staff (
+    StaffID     INT PRIMARY KEY AUTO_INCREMENT,
+    ResidenceID INT NOT NULL,
+    FirstName   VARCHAR(50) NOT NULL,
+    LastName    VARCHAR(50) NOT NULL,
+    Email       VARCHAR(100) UNIQUE,
+    Role        VARCHAR(50),
+    FOREIGN KEY (ResidenceID) REFERENCES residence(ResidenceID)
+);
 
-    print(" | ".join(h.ljust(widths[i]) for i, h in enumerate(headers)))
-    print("-+-".join("-" * w for w in widths))
-    for row in rows:
-        print(" | ".join(str(v).ljust(widths[i]) for i, v in enumerate(row)))
+CREATE TABLE maintenance_request (
+    RequestID   INT PRIMARY KEY AUTO_INCREMENT,
+    RoomID      INT NOT NULL,
+    StudentID   INT NOT NULL,
+    StaffID     INT,
+    RequestDate DATE,
+    Description VARCHAR(255),
+    Priority    VARCHAR(10),
+    Status      VARCHAR(20) DEFAULT 'Open',
+    FOREIGN KEY (RoomID)    REFERENCES room(RoomID),
+    FOREIGN KEY (StudentID) REFERENCES student(StudentID),
+    FOREIGN KEY (StaffID)   REFERENCES staff(StaffID)
+);
 
+-- ---------------------- DATA -------------------------
 
-# ------------------- QUERIES -------------------
+INSERT INTO student VALUES
+(1,  'Thabo',   'Mokoena',  'thabo@uni.ac.za',   '0711110001', 'Computer Science',    2),
+(2,  'Aisha',   'Davids',   'aisha@uni.ac.za',   '0711110002', 'Information Systems', 1),
+(3,  'Lerato',  'Khumalo',  'lerato@uni.ac.za',  '0711110003', 'Engineering',         3),
+(4,  'Sipho',   'Ndlovu',   'sipho@uni.ac.za',   '0711110004', 'Computer Science',    3),
+(5,  'Naledi',  'Jacobs',   'naledi@uni.ac.za',  '0711110005', 'Law',                 2),
+(6,  'Pieter',  'van Wyk',  'pieter@uni.ac.za',  '0711110006', 'Commerce',            1),
+(7,  'Zanele',  'Dlamini',  'zanele@uni.ac.za',  '0711110007', 'Computer Science',    2),
+(8,  'Michael', 'Adams',    'michael@uni.ac.za', '0711110008', 'Natural Sciences',    4),
+(9,  'Nomsa',   'Zulu',     'nomsa@uni.ac.za',   '0711110009', 'Health Sciences',     1),
+(10, 'Ryan',    'Petersen', 'ryan@uni.ac.za',    '0711110010', 'Engineering',         2),
+(11, 'Fatima',  'Hendricks','fatima.h@uni.ac.za','0711110011', 'Education',           3),
+(12, 'Kyle',    'Brown',    'kyle@uni.ac.za',    '0711110012', 'Commerce',            1);
 
-def residence_capacity(conn):
-    sql = """
-        SELECT r.ResidenceName,
-               COUNT(rm.RoomID) AS NumberOfRooms,
-               SUM(rm.Capacity) AS TotalBeds
-        FROM residence r
-        INNER JOIN room rm ON r.ResidenceID = rm.ResidenceID
-        GROUP BY r.ResidenceName
-    """
-    run_query(conn, sql)
+INSERT INTO residence VALUES
+(1, 'Protea Residence',     'North Campus', 'Female', 5),
+(2, 'Fynbos Residence',     'South Campus', 'Male',   6),
+(3, 'Silvertree Residence', 'Main Campus',  'Mixed',  6);
 
+INSERT INTO room VALUES
+(1,  1, '101', 'Single', 1, 'Available'),
+(2,  1, '102', 'Double', 2, 'Available'),
+(3,  1, '103', 'Double', 2, 'Available'),
+(4,  2, '201', 'Single', 1, 'Available'),
+(5,  2, '202', 'Double', 2, 'Available'),
+(6,  2, '203', 'Triple', 3, 'Available'),
+(7,  3, '301', 'Single', 1, 'Available'),
+(8,  3, '302', 'Double', 2, 'Available'),
+(9,  3, '303', 'Double', 2, 'Available'),
+(10, 3, '304', 'Single', 1, 'Under Maintenance');
 
-def unpaid_fees(conn):
-    sql = """
-        SELECT CONCAT(s.FirstName, ' ', s.LastName) AS Student,
-               COUNT(py.PaymentID) AS UnpaidPayments,
-               SUM(py.Amount)      AS AmountOwed
-        FROM student s
-        INNER JOIN payment py ON s.StudentID = py.StudentID
-        WHERE py.Status IN ('Pending', 'Overdue')
-        GROUP BY s.StudentID, s.FirstName, s.LastName
-    """
-    run_query(conn, sql)
+INSERT INTO academic_period VALUES
+(1, 2025, 1, '2025-02-03', '2025-06-27'),
+(2, 2025, 2, '2025-07-14', '2025-11-28'),
+(3, 2026, 1, '2026-02-02', '2026-06-26'),
+(4, 2026, 2, '2026-07-13', '2026-11-27');
 
+INSERT INTO application VALUES
+(1,  1,  2, '2025-06-20', 'Approved'),
+(2,  2,  2, '2025-06-21', 'Approved'),
+(3,  3,  2, '2025-06-22', 'Approved'),
+(4,  7,  2, '2025-06-23', 'Rejected'),
+(5,  1,  3, '2026-01-10', 'Approved'),
+(6,  2,  3, '2026-01-11', 'Approved'),
+(7,  3,  3, '2026-01-12', 'Approved'),
+(8,  4,  3, '2026-01-12', 'Approved'),
+(9,  5,  3, '2026-01-13', 'Approved'),
+(10, 6,  3, '2026-01-14', 'Approved'),
+(11, 7,  3, '2026-01-15', 'Approved'),
+(12, 8,  3, '2026-01-15', 'Approved'),
+(13, 9,  3, '2026-01-18', 'Waitlisted'),
+(14, 10, 3, '2026-01-16', 'Approved'),
+(15, 11, 3, '2026-01-17', 'Rejected'),
+(16, 12, 3, '2026-01-19', 'Pending'),
+(17, 1,  4, '2026-06-05', 'Pending'),
+(18, 4,  4, '2026-06-06', 'Pending'),
+(19, 9,  4, '2026-06-07', 'Pending');
 
-def students_without_room(conn):
-    sql = """
-        SELECT CONCAT(s.FirstName, ' ', s.LastName) AS Student,
-               s.Programme
-        FROM student s
-        LEFT JOIN allocation al ON s.StudentID = al.StudentID
-        WHERE al.AllocationID IS NULL
-    """
-    run_query(conn, sql)
+INSERT INTO allocation VALUES
+(1,  1,  4, 1,  '2025-07-15', '2025-11-30', 'Completed'),
+(2,  2,  1, 2,  '2025-07-15', '2025-11-30', 'Completed'),
+(3,  3,  2, 3,  '2025-07-15', '2025-11-30', 'Completed'),
+(4,  1,  5, 5,  '2026-02-01', '2026-06-30', 'Active'),
+(5,  4,  5, 8,  '2026-02-01', '2026-06-30', 'Active'),
+(6,  2,  1, 6,  '2026-02-01', '2026-06-30', 'Active'),
+(7,  3,  2, 7,  '2026-02-01', '2026-06-30', 'Active'),
+(8,  5,  2, 9,  '2026-02-01', '2026-06-30', 'Active'),
+(9,  6,  7, 10, '2026-02-01', '2026-06-30', 'Active'),
+(10, 7,  8, 11, '2026-02-01', '2026-06-30', 'Active'),
+(11, 8,  6, 12, '2026-02-01', '2026-06-30', 'Active'),
+(12, 10, 6, 14, '2026-02-01', '2026-06-30', 'Active');
 
+INSERT INTO payment VALUES
+(1,  1,  '2025-07-10',  9000.00, 'EFT',  'Paid'),
+(2,  2,  '2025-07-12', 12000.00, 'EFT',  'Paid'),
+(3,  3,  '2025-07-14',  6000.00, 'Card', 'Paid'),
+(4,  1,  '2026-01-25',  8500.00, 'EFT',  'Paid'),
+(5,  1,  '2026-03-01',  8500.00, 'Card', 'Paid'),
+(6,  2,  '2026-01-28', 12000.00, 'EFT',  'Paid'),
+(7,  3,  '2026-02-02',  6000.00, 'Card', 'Paid'),
+(8,  3,  '2026-03-02',  6000.00, 'Card', 'Pending'),
+(9,  4,  '2026-02-03',  8500.00, 'Cash', 'Paid'),
+(10, 4,  '2026-03-03',  8500.00, 'Cash', 'Overdue'),
+(11, 5,  '2026-02-01',  6000.00, 'EFT',  'Refunded'),
+(12, 6,  '2026-02-05', 11000.00, 'EFT',  'Paid'),
+(13, 7,  '2026-02-06',  7000.00, 'Card', 'Paid'),
+(14, 7,  '2026-03-06',  7000.00, 'Card', 'Pending'),
+(15, 8,  '2026-02-04',  5000.00, 'Card', 'Paid'),
+(16, 8,  '2026-03-04',  5000.00, 'Card', 'Overdue'),
+(17, 10, '2026-02-06',  5000.00, 'EFT',  'Paid'),
+(18, 10, '2026-03-06',  5000.00, 'EFT',  'Paid');
 
-def maintenance_summary(conn):
-    sql = """
-        SELECT r.ResidenceName, mr.Priority,
-               COUNT(mr.RequestID) AS Requests
-        FROM maintenance_request mr
-        INNER JOIN room rm ON mr.RoomID = rm.RoomID
-        INNER JOIN residence r ON rm.ResidenceID = r.ResidenceID
-        GROUP BY r.ResidenceName, mr.Priority
-    """
-    run_query(conn, sql)
+INSERT INTO staff VALUES
+(1, 1, 'Nokuthula', 'Mthembu', 'nokuthula@uni.ac.za', 'Residence Manager'),
+(2, 2, 'Johan',     'Botha',   'johan@uni.ac.za',     'Residence Manager'),
+(3, 1, 'Fatima',    'Salie',   'fatima@uni.ac.za',    'Maintenance Officer'),
+(4, 2, 'Sam',       'Naidoo',  'sam@uni.ac.za',       'Maintenance Officer'),
+(5, 3, 'Grace',     'Mensah',  'grace@uni.ac.za',     'Residence Manager'),
+(6, 3, 'Bongani',   'Cele',    'bongani@uni.ac.za',   'Maintenance Officer'),
+(7, 2, 'Priya',     'Pillay',  'priya@uni.ac.za',     'Maintenance Officer');
 
+INSERT INTO maintenance_request VALUES
+(1,  5, 1,  4,    '2026-02-15', 'Leaking tap',            'High',   'Resolved'),
+(2,  2, 3,  3,    '2026-03-10', 'Broken window latch',    'Medium', 'In Progress'),
+(3,  7, 6,  6,    '2026-03-12', 'Faulty ceiling light',   'Low',    'Resolved'),
+(4,  6, 8,  4,    '2026-04-02', 'Heater not working',     'High',   'In Progress'),
+(5,  6, 10, NULL, '2026-04-05', 'Heater not working',     'High',   'Open'),
+(6,  1, 2,  3,    '2026-04-20', 'Door lock stuck',        'High',   'Resolved'),
+(7,  5, 4,  4,    '2026-05-03', 'Mould on wall',          'Medium', 'Open'),
+(8,  8, 7,  6,    '2026-05-10', 'Ceiling leak',           'High',   'In Progress'),
+(9,  8, 7,  6,    '2026-05-18', 'Blocked drain',          'Medium', 'Open'),
+(10, 2, 5,  3,    '2026-05-20', 'Broken desk chair',      'Low',    'Resolved'),
+(11, 1, 2,  3,    '2026-06-01', 'Faulty power socket',    'Low',    'Closed');
 
-def search_student(conn):
-    name = input("Enter part of a student's first or last name: ")
-    sql = """
-        SELECT StudentID, FirstName, LastName, Email, Programme
-        FROM student
-        WHERE FirstName LIKE %s OR LastName LIKE %s
-    """
-    pattern = "%" + name + "%"
-    run_query(conn, sql, (pattern, pattern))
+-- ---------------------- QUERIES ----------------------
 
+-- University Accommodation System: queries
+-- Database: university_accommodation
+USE university_accommodation;
 
-def add_maintenance_request(conn):
-    """INSERT example: a student reports a maintenance problem."""
-    try:
-        room_id = int(input("Room ID: "))
-        student_id = int(input("Student ID: "))
-    except ValueError:
-        print("Room ID and Student ID must be numbers.")
-        return
-    description = input("Description of the problem: ")
-    priority = input("Priority (Low/Medium/High): ").capitalize()
+-- =====================================================
+-- 1. Residence capacity
+-- =====================================================
+SELECT r.ResidenceName,
+       COUNT(rm.RoomID) AS NumberOfRooms,
+       SUM(rm.Capacity) AS TotalBeds
+FROM residence r
+INNER JOIN room rm ON r.ResidenceID = rm.ResidenceID
+GROUP BY r.ResidenceName;
 
-    if priority not in ("Low", "Medium", "High"):
-        print("Priority must be Low, Medium or High.")
-        return
+-- =====================================================
+-- 2. Students with unpaid fees
+-- =====================================================
+SELECT CONCAT(s.FirstName, ' ', s.LastName) AS Student,
+       COUNT(py.PaymentID) AS UnpaidPayments,
+       SUM(py.Amount)      AS AmountOwed
+FROM student s
+INNER JOIN payment py ON s.StudentID = py.StudentID
+WHERE py.Status IN ('Pending', 'Overdue')
+GROUP BY s.StudentID, s.FirstName, s.LastName;
 
-    sql = """
-        INSERT INTO maintenance_request
-            (RoomID, StudentID, RequestDate, Description, Priority, Status)
-        VALUES (%s, %s, CURDATE(), %s, %s, 'Open')
-    """
-    cursor = conn.cursor()
-    cursor.execute(sql, (room_id, student_id, description, priority))
-    conn.commit()
-    print("Maintenance request added (ID", cursor.lastrowid, ")")
-    cursor.close()
+-- =====================================================
+-- 3. Students without a room
+-- =====================================================
+SELECT CONCAT(s.FirstName, ' ', s.LastName) AS Student,
+       s.Programme
+FROM student s
+LEFT JOIN allocation al ON s.StudentID = al.StudentID
+WHERE al.AllocationID IS NULL;
 
+-- =====================================================
+-- 4. Maintenance requests by residence and priority
+-- =====================================================
+SELECT r.ResidenceName, mr.Priority,
+       COUNT(mr.RequestID) AS Requests
+FROM maintenance_request mr
+INNER JOIN room rm ON mr.RoomID = rm.RoomID
+INNER JOIN residence r ON rm.ResidenceID = r.ResidenceID
+GROUP BY r.ResidenceName, mr.Priority;
 
-# ------------------- NEW QUERIES -------------------
+-- =====================================================
+-- 5. Search for a student (change 'Sipho' to any part of a name)
+-- =====================================================
+SELECT StudentID, FirstName, LastName, Email, Programme
+FROM student
+WHERE FirstName LIKE '%Sipho%' OR LastName LIKE '%Sipho%';
 
-def students_per_programme(conn):
-    """How many students are enrolled in each programme."""
-    sql = """
-        SELECT Programme,
-               COUNT(StudentID) AS NumberOfStudents
-        FROM student
-        GROUP BY Programme
-        ORDER BY NumberOfStudents DESC
-    """
-    run_query(conn, sql)
+-- =====================================================
+-- 6. Add a maintenance request (example values; run only when needed)
+-- =====================================================
+-- INSERT INTO maintenance_request
+--     (RoomID, StudentID, RequestDate, Description, Priority, Status)
+-- VALUES (2, 1, CURDATE(), 'Leak', 'High', 'Open');
 
+-- =====================================================
+-- 7. Number of students per programme
+-- =====================================================
+SELECT Programme,
+       COUNT(StudentID) AS NumberOfStudents
+FROM student
+GROUP BY Programme
+ORDER BY NumberOfStudents DESC;
 
-def payment_status_summary(conn):
-    """Number and total value of payments for each payment status."""
-    sql = """
-        SELECT Status,
-               COUNT(PaymentID) AS NumberOfPayments,
-               SUM(Amount)      AS TotalAmount
-        FROM payment
-        GROUP BY Status
-        ORDER BY TotalAmount DESC
-    """
-    run_query(conn, sql)
+-- =====================================================
+-- 8. Payment summary by status
+-- =====================================================
+SELECT Status,
+       COUNT(PaymentID) AS NumberOfPayments,
+       SUM(Amount)      AS TotalAmount
+FROM payment
+GROUP BY Status
+ORDER BY TotalAmount DESC;
 
+-- =====================================================
+-- 9. Residence occupancy (% full)
+-- =====================================================
+SELECT r.ResidenceName,
+       cap.TotalBeds,
+       COALESCE(occ.Occupied, 0) AS BedsOccupied,
+       ROUND(100 * COALESCE(occ.Occupied, 0) / cap.TotalBeds, 1) AS PercentFull
+FROM residence r
+INNER JOIN (
+    SELECT ResidenceID, SUM(Capacity) AS TotalBeds
+    FROM room
+    GROUP BY ResidenceID
+) cap ON r.ResidenceID = cap.ResidenceID
+LEFT JOIN (
+    SELECT rm.ResidenceID, COUNT(al.AllocationID) AS Occupied
+    FROM room rm
+    INNER JOIN allocation al ON al.RoomID = rm.RoomID
+    GROUP BY rm.ResidenceID
+) occ ON r.ResidenceID = occ.ResidenceID
+ORDER BY PercentFull DESC;
 
-def residence_occupancy(conn):
-    """Beds taken vs total beds per residence, as a percentage.
+-- =====================================================
+-- 10. Open maintenance requests (highest priority first)
+-- =====================================================
+SELECT mr.RequestID,
+       r.ResidenceName,
+       mr.RoomID,
+       CONCAT(s.FirstName, ' ', s.LastName) AS ReportedBy,
+       mr.Priority,
+       mr.RequestDate,
+       mr.Description
+FROM maintenance_request mr
+INNER JOIN student s   ON mr.StudentID = s.StudentID
+INNER JOIN room rm     ON mr.RoomID = rm.RoomID
+INNER JOIN residence r ON rm.ResidenceID = r.ResidenceID
+WHERE mr.Status = 'Open'
+ORDER BY FIELD(mr.Priority, 'High', 'Medium', 'Low'), mr.RequestDate;
 
-    Assumes allocation has a RoomID column linking it to room.
-    """
-    sql = """
-        SELECT r.ResidenceName,
-               cap.TotalBeds,
-               COALESCE(occ.Occupied, 0) AS BedsOccupied,
-               ROUND(100 * COALESCE(occ.Occupied, 0) / cap.TotalBeds, 1)
-                   AS PercentFull
-        FROM residence r
-        INNER JOIN (
-            SELECT ResidenceID, SUM(Capacity) AS TotalBeds
-            FROM room
-            GROUP BY ResidenceID
-        ) cap ON r.ResidenceID = cap.ResidenceID
-        LEFT JOIN (
-            SELECT rm.ResidenceID, COUNT(al.AllocationID) AS Occupied
-            FROM room rm
-            INNER JOIN allocation al ON al.RoomID = rm.RoomID
-            GROUP BY rm.ResidenceID
-        ) occ ON r.ResidenceID = occ.ResidenceID
-        ORDER BY PercentFull DESC
-    """
-    run_query(conn, sql)
+-- =====================================================
+-- 11. Students with repeat maintenance requests
+-- =====================================================
+SELECT CONCAT(s.FirstName, ' ', s.LastName) AS Student,
+       COUNT(mr.RequestID) AS RequestsSubmitted
+FROM student s
+INNER JOIN maintenance_request mr ON s.StudentID = mr.StudentID
+GROUP BY s.StudentID, s.FirstName, s.LastName
+HAVING COUNT(mr.RequestID) > 1
+ORDER BY RequestsSubmitted DESC;
 
+-- =====================================================
+-- 12. Recent maintenance requests (change 30 to any number of days)
+-- =====================================================
+SELECT mr.RequestID, mr.RequestDate, mr.Priority, mr.Status,
+       mr.Description
+FROM maintenance_request mr
+WHERE mr.RequestDate >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+ORDER BY mr.RequestDate DESC;
 
-def open_maintenance_requests(conn):
-    """All open requests with who reported them and where, highest priority first."""
-    sql = """
-        SELECT mr.RequestID,
-               r.ResidenceName,
-               mr.RoomID,
-               CONCAT(s.FirstName, ' ', s.LastName) AS ReportedBy,
-               mr.Priority,
-               mr.RequestDate,
-               mr.Description
-        FROM maintenance_request mr
-        INNER JOIN student s   ON mr.StudentID = s.StudentID
-        INNER JOIN room rm     ON mr.RoomID = rm.RoomID
-        INNER JOIN residence r ON rm.ResidenceID = r.ResidenceID
-        WHERE mr.Status = 'Open'
-        ORDER BY FIELD(mr.Priority, 'High', 'Medium', 'Low'), mr.RequestDate
-    """
-    run_query(conn, sql)
+SELECT *
+FROM student;
 
-
-def repeat_reporters(conn):
-    """Students who have submitted more than one maintenance request."""
-    sql = """
-        SELECT CONCAT(s.FirstName, ' ', s.LastName) AS Student,
-               COUNT(mr.RequestID) AS RequestsSubmitted
-        FROM student s
-        INNER JOIN maintenance_request mr ON s.StudentID = mr.StudentID
-        GROUP BY s.StudentID, s.FirstName, s.LastName
-        HAVING COUNT(mr.RequestID) > 1
-        ORDER BY RequestsSubmitted DESC
-    """
-    run_query(conn, sql)
-
-
-def recent_maintenance_requests(conn):
-    """Maintenance requests from the last N days (the user chooses N)."""
-    try:
-        days = int(input("Show requests from the last how many days? "))
-    except ValueError:
-        print("Please enter a whole number.")
-        return
-    sql = """
-        SELECT mr.RequestID, mr.RequestDate, mr.Priority, mr.Status,
-               mr.Description
-        FROM maintenance_request mr
-        WHERE mr.RequestDate >= DATE_SUB(CURDATE(), INTERVAL %s DAY)
-        ORDER BY mr.RequestDate DESC
-    """
-    run_query(conn, sql, (days,))
-
-
-# ------------------- MAIN MENU -------------------
-
-def main():
-    try:
-        conn = connect()
-        print("Connected to the database.")
-    except Error as e:
-        print("Could not connect:", e)
-        return
-
-    menu = {
-        "1": ("Residence capacity", residence_capacity),
-        "2": ("Students with unpaid fees", unpaid_fees),
-        "3": ("Students without a room", students_without_room),
-        "4": ("Maintenance requests by residence and priority", maintenance_summary),
-        "5": ("Search for a student", search_student),
-        "6": ("Add a maintenance request", add_maintenance_request),
-        "7": ("Number of students per programme", students_per_programme),
-        "8": ("Payment summary by status", payment_status_summary),
-        "9": ("Residence occupancy (% full)", residence_occupancy),
-        "10": ("Open maintenance requests (highest priority first)", open_maintenance_requests),
-        "11": ("Students with repeat maintenance requests", repeat_reporters),
-        "12": ("Recent maintenance requests (last N days)", recent_maintenance_requests),
-    }
-
-    while True:
-        print("\n=== University Accommodation System ===")
-        for key, (label, _) in menu.items():
-            print(key + ". " + label)
-        print("0. Exit")
-
-        choice = input("Choose an option: ")
-        if choice == "0":
-            break
-        if choice in menu:
-            print()
-            try:
-                menu[choice][1](conn)
-            except Error as e:
-                print("Database error:", e)
-        else:
-            print("Invalid option, try again.")
-
-    conn.close()
-    print("Connection closed. Goodbye!")
-
-
-if __name__ == "__main__":
-    main()
