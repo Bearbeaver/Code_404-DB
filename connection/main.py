@@ -1,11 +1,10 @@
-
 import mysql.connector
 from mysql.connector import Error
 
 # ---- your student number (the connection details come from it) ----
-STUDENT_NUMBER = "" #enter your student number
+STUDENT_NUMBER = ""
 
-# Port = "2" + last four digits of the student number 
+# Port = "2" + last four digits of the student number (4428909 -> 28909)
 PORT = int("2" + STUDENT_NUMBER[-4:])
 
 
@@ -139,6 +138,112 @@ def add_maintenance_request(conn):
     cursor.close()
 
 
+# ------------------- NEW QUERIES -------------------
+
+def students_per_programme(conn):
+    """How many students are enrolled in each programme."""
+    sql = """
+        SELECT Programme,
+               COUNT(StudentID) AS NumberOfStudents
+        FROM student
+        GROUP BY Programme
+        ORDER BY NumberOfStudents DESC
+    """
+    run_query(conn, sql)
+
+
+def payment_status_summary(conn):
+    """Number and total value of payments for each payment status."""
+    sql = """
+        SELECT Status,
+               COUNT(PaymentID) AS NumberOfPayments,
+               SUM(Amount)      AS TotalAmount
+        FROM payment
+        GROUP BY Status
+        ORDER BY TotalAmount DESC
+    """
+    run_query(conn, sql)
+
+
+def residence_occupancy(conn):
+    """Beds taken vs total beds per residence, as a percentage.
+
+    Assumes allocation has a RoomID column linking it to room.
+    """
+    sql = """
+        SELECT r.ResidenceName,
+               cap.TotalBeds,
+               COALESCE(occ.Occupied, 0) AS BedsOccupied,
+               ROUND(100 * COALESCE(occ.Occupied, 0) / cap.TotalBeds, 1)
+                   AS PercentFull
+        FROM residence r
+        INNER JOIN (
+            SELECT ResidenceID, SUM(Capacity) AS TotalBeds
+            FROM room
+            GROUP BY ResidenceID
+        ) cap ON r.ResidenceID = cap.ResidenceID
+        LEFT JOIN (
+            SELECT rm.ResidenceID, COUNT(al.AllocationID) AS Occupied
+            FROM room rm
+            INNER JOIN allocation al ON al.RoomID = rm.RoomID
+            GROUP BY rm.ResidenceID
+        ) occ ON r.ResidenceID = occ.ResidenceID
+        ORDER BY PercentFull DESC
+    """
+    run_query(conn, sql)
+
+
+def open_maintenance_requests(conn):
+    """All open requests with who reported them and where, highest priority first."""
+    sql = """
+        SELECT mr.RequestID,
+               r.ResidenceName,
+               mr.RoomID,
+               CONCAT(s.FirstName, ' ', s.LastName) AS ReportedBy,
+               mr.Priority,
+               mr.RequestDate,
+               mr.Description
+        FROM maintenance_request mr
+        INNER JOIN student s   ON mr.StudentID = s.StudentID
+        INNER JOIN room rm     ON mr.RoomID = rm.RoomID
+        INNER JOIN residence r ON rm.ResidenceID = r.ResidenceID
+        WHERE mr.Status = 'Open'
+        ORDER BY FIELD(mr.Priority, 'High', 'Medium', 'Low'), mr.RequestDate
+    """
+    run_query(conn, sql)
+
+
+def repeat_reporters(conn):
+    """Students who have submitted more than one maintenance request."""
+    sql = """
+        SELECT CONCAT(s.FirstName, ' ', s.LastName) AS Student,
+               COUNT(mr.RequestID) AS RequestsSubmitted
+        FROM student s
+        INNER JOIN maintenance_request mr ON s.StudentID = mr.StudentID
+        GROUP BY s.StudentID, s.FirstName, s.LastName
+        HAVING COUNT(mr.RequestID) > 1
+        ORDER BY RequestsSubmitted DESC
+    """
+    run_query(conn, sql)
+
+
+def recent_maintenance_requests(conn):
+    """Maintenance requests from the last N days (the user chooses N)."""
+    try:
+        days = int(input("Show requests from the last how many days? "))
+    except ValueError:
+        print("Please enter a whole number.")
+        return
+    sql = """
+        SELECT mr.RequestID, mr.RequestDate, mr.Priority, mr.Status,
+               mr.Description
+        FROM maintenance_request mr
+        WHERE mr.RequestDate >= DATE_SUB(CURDATE(), INTERVAL %s DAY)
+        ORDER BY mr.RequestDate DESC
+    """
+    run_query(conn, sql, (days,))
+
+
 # ------------------- MAIN MENU -------------------
 
 def main():
@@ -156,6 +261,12 @@ def main():
         "4": ("Maintenance requests by residence and priority", maintenance_summary),
         "5": ("Search for a student", search_student),
         "6": ("Add a maintenance request", add_maintenance_request),
+        "7": ("Number of students per programme", students_per_programme),
+        "8": ("Payment summary by status", payment_status_summary),
+        "9": ("Residence occupancy (% full)", residence_occupancy),
+        "10": ("Open maintenance requests (highest priority first)", open_maintenance_requests),
+        "11": ("Students with repeat maintenance requests", repeat_reporters),
+        "12": ("Recent maintenance requests (last N days)", recent_maintenance_requests),
     }
 
     while True:
