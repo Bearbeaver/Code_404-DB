@@ -221,26 +221,23 @@ INSERT INTO maintenance_request VALUES
 
 -- ---------------------- QUERIES ----------------------
 
--- Q1: Number of rooms and total room capacity per residence
--- (shows how much space each residence offers)
+-- University Accommodation System: queries
+-- Database: university_accommodation
+USE university_accommodation;
+
+-- =====================================================
+-- 1. Residence capacity
+-- =====================================================
 SELECT r.ResidenceName,
-       COUNT(rm.RoomID)  AS NumberOfRooms,
-       SUM(rm.Capacity)  AS TotalBeds
+       COUNT(rm.RoomID) AS NumberOfRooms,
+       SUM(rm.Capacity) AS TotalBeds
 FROM residence r
 INNER JOIN room rm ON r.ResidenceID = rm.ResidenceID
 GROUP BY r.ResidenceName;
 
--- Q2: Applications per period and status
--- (shows demand and how many applications are approved)
-SELECT CONCAT(p.AcademicYear, ' Semester ', p.Semester) AS Period,
-       a.Status,
-       COUNT(a.ApplicationID) AS TotalApplications
-FROM academic_period p
-INNER JOIN application a ON p.PeriodID = a.PeriodID
-GROUP BY p.AcademicYear, p.Semester, a.Status;
-
--- Q3: Unpaid fees per student
--- (finance office can follow up on students who owe money)
+-- =====================================================
+-- 2. Students with unpaid fees
+-- =====================================================
 SELECT CONCAT(s.FirstName, ' ', s.LastName) AS Student,
        COUNT(py.PaymentID) AS UnpaidPayments,
        SUM(py.Amount)      AS AmountOwed
@@ -249,61 +246,119 @@ INNER JOIN payment py ON s.StudentID = py.StudentID
 WHERE py.Status IN ('Pending', 'Overdue')
 GROUP BY s.StudentID, s.FirstName, s.LastName;
 
--- Q4: Students who paid more than the average paid amount
--- (subquery in the WHERE clause)
-SELECT CONCAT(s.FirstName, ' ', s.LastName) AS Student,
-       py.Amount, py.PaymentDate
-FROM student s
-INNER JOIN payment py ON s.StudentID = py.StudentID
-WHERE py.Status = 'Paid'
-  AND py.Amount > (SELECT AVG(Amount) FROM payment WHERE Status = 'Paid');
-
--- Q5: Students who have no room allocation
--- (shows who still needs accommodation)
+-- =====================================================
+-- 3. Students without a room
+-- =====================================================
 SELECT CONCAT(s.FirstName, ' ', s.LastName) AS Student,
        s.Programme
 FROM student s
 LEFT JOIN allocation al ON s.StudentID = al.StudentID
 WHERE al.AllocationID IS NULL;
 
--- Q6: Maintenance requests per residence and priority
--- (helps plan where maintenance staff are needed)
-SELECT r.ResidenceName,
-       mr.Priority,
+-- =====================================================
+-- 4. Maintenance requests by residence and priority
+-- =====================================================
+SELECT r.ResidenceName, mr.Priority,
        COUNT(mr.RequestID) AS Requests
 FROM maintenance_request mr
 INNER JOIN room rm ON mr.RoomID = rm.RoomID
 INNER JOIN residence r ON rm.ResidenceID = r.ResidenceID
 GROUP BY r.ResidenceName, mr.Priority;
 
--- Q7: Workload of maintenance staff (including staff with no requests)
-SELECT CONCAT(st.FirstName, ' ', st.LastName) AS StaffMember,
-       st.Role,
-       COUNT(mr.RequestID) AS RequestsHandled
-FROM staff st
-LEFT JOIN maintenance_request mr ON st.StaffID = mr.StaffID
-WHERE st.Role LIKE '%Maintenance%'
-GROUP BY st.StaffID, st.FirstName, st.LastName, st.Role;
+-- =====================================================
+-- 5. Search for a student (change 'Sipho' to any part of a name)
+-- =====================================================
+SELECT StudentID, FirstName, LastName, Email, Programme
+FROM student
+WHERE FirstName LIKE '%Sipho%' OR LastName LIKE '%Sipho%';
 
--- Q8 (complex): Students living in rooms that have unresolved
--- maintenance requests and who have paid more than R5000 in total
-SELECT CONCAT(s.FirstName, ' ', s.LastName) AS Student,
+-- =====================================================
+-- 6. Add a maintenance request (example values; run only when needed)
+-- =====================================================
+-- INSERT INTO maintenance_request
+--     (RoomID, StudentID, RequestDate, Description, Priority, Status)
+-- VALUES (2, 1, CURDATE(), 'Leak', 'High', 'Open');
+
+-- =====================================================
+-- 7. Number of students per programme
+-- =====================================================
+SELECT Programme,
+       COUNT(StudentID) AS NumberOfStudents
+FROM student
+GROUP BY Programme
+ORDER BY NumberOfStudents DESC;
+
+-- =====================================================
+-- 8. Payment summary by status
+-- =====================================================
+SELECT Status,
+       COUNT(PaymentID) AS NumberOfPayments,
+       SUM(Amount)      AS TotalAmount
+FROM payment
+GROUP BY Status
+ORDER BY TotalAmount DESC;
+
+-- =====================================================
+-- 9. Residence occupancy (% full)
+-- =====================================================
+SELECT r.ResidenceName,
+       cap.TotalBeds,
+       COALESCE(occ.Occupied, 0) AS BedsOccupied,
+       ROUND(100 * COALESCE(occ.Occupied, 0) / cap.TotalBeds, 1) AS PercentFull
+FROM residence r
+INNER JOIN (
+    SELECT ResidenceID, SUM(Capacity) AS TotalBeds
+    FROM room
+    GROUP BY ResidenceID
+) cap ON r.ResidenceID = cap.ResidenceID
+LEFT JOIN (
+    SELECT rm.ResidenceID, COUNT(al.AllocationID) AS Occupied
+    FROM room rm
+    INNER JOIN allocation al ON al.RoomID = rm.RoomID
+    GROUP BY rm.ResidenceID
+) occ ON r.ResidenceID = occ.ResidenceID
+ORDER BY PercentFull DESC;
+
+-- =====================================================
+-- 10. Open maintenance requests (highest priority first)
+-- =====================================================
+SELECT mr.RequestID,
        r.ResidenceName,
-       rm.RoomNumber,
-       SUM(py.Amount) AS TotalPaid
-FROM student s
-INNER JOIN allocation al ON s.StudentID = al.StudentID
-INNER JOIN room rm       ON al.RoomID = rm.RoomID
-INNER JOIN residence r   ON rm.ResidenceID = r.ResidenceID
-INNER JOIN payment py    ON s.StudentID = py.StudentID
-WHERE py.Status = 'Paid'
-  AND rm.RoomID IN (SELECT RoomID
-                    FROM maintenance_request
-                    WHERE Status IN ('Open', 'In Progress'))
-GROUP BY s.StudentID, s.FirstName, s.LastName, r.ResidenceName, rm.RoomNumber
-HAVING SUM(py.Amount) > 5000;
+       mr.RoomID,
+       CONCAT(s.FirstName, ' ', s.LastName) AS ReportedBy,
+       mr.Priority,
+       mr.RequestDate,
+       mr.Description
+FROM maintenance_request mr
+INNER JOIN student s   ON mr.StudentID = s.StudentID
+INNER JOIN room rm     ON mr.RoomID = rm.RoomID
+INNER JOIN residence r ON rm.ResidenceID = r.ResidenceID
+WHERE mr.Status = 'Open'
+ORDER BY FIELD(mr.Priority, 'High', 'Medium', 'Low'), mr.RequestDate;
 
+-- =====================================================
+-- 11. Students with repeat maintenance requests
+-- =====================================================
+SELECT CONCAT(s.FirstName, ' ', s.LastName) AS Student,
+       COUNT(mr.RequestID) AS RequestsSubmitted
+FROM student s
+INNER JOIN maintenance_request mr ON s.StudentID = mr.StudentID
+GROUP BY s.StudentID, s.FirstName, s.LastName
+HAVING COUNT(mr.RequestID) > 1
+ORDER BY RequestsSubmitted DESC;
+
+-- =====================================================
+-- 12. Recent maintenance requests (change 30 to any number of days)
+-- =====================================================
+SELECT mr.RequestID, mr.RequestDate, mr.Priority, mr.Status,
+       mr.Description
+FROM maintenance_request mr
+WHERE mr.RequestDate >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+ORDER BY mr.RequestDate DESC;
 
 SELECT *
 FROM student;
+
+
+
 
