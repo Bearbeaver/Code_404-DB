@@ -1,3 +1,10 @@
+#4472210-Mobe TR
+#4428909-Ncube TM
+#4428366-Ndou L
+#4442224-Hlungwani N
+#4460205-Zimase LA
+#4449094-Mfincane Y 
+
 import mysql.connector
 from mysql.connector import Error
 
